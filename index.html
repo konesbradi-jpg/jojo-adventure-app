@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a0033">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JoJo Viewer">
+<link rel="manifest" href="manifest.json">
+<title>JoJo's Bizarre Adventure — Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Bangers&family=Noto+Sans+JP:wght@400;700;900&family=Black+Ops+One&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   CSS VARIABLES & RESET
+   ============================================================ */
+:root {
+  --c-bg:       #0d0010;
+  --c-bg2:      #16001f;
+  --c-purple:   #7b00ff;
+  --c-violet:   #4a0080;
+  --c-pink:     #ff00aa;
+  --c-yellow:   #ffe600;
+  --c-gold:     #ffaa00;
+  --c-cyan:     #00ffee;
+  --c-white:    #f0e6ff;
+  --c-gray:     #3a2a4a;
+  --c-card:     #1e0030;
+  --c-border:   #5a0090;
+  --font-title: 'Bangers', cursive;
+  --font-hud:   'Black Ops One', cursive;
+  --font-body:  'Noto Sans JP', sans-serif;
+  --r:          12px;
+  --shadow-neon: 0 0 20px rgba(123,0,255,0.6), 0 0 60px rgba(123,0,255,0.2);
+  --shadow-pink: 0 0 20px rgba(255,0,170,0.6), 0 0 60px rgba(255,0,170,0.2);
+  --shadow-gold: 0 0 20px rgba(255,170,0,0.6), 0 0 60px rgba(255,170,0,0.2);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%; width: 100%;
+  overflow: hidden;
+  background: var(--c-bg);
+  color: var(--c-white);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* ============================================================
+   SCROLLABLE PANELS
+   ============================================================ */
+.panel {
+  position: absolute; inset: 0;
+  overflow-y: auto; overflow-x: hidden;
+  display: none;
+  flex-direction: column;
+  padding-bottom: 80px;
+  -webkit-overflow-scrolling: touch;
+}
+.panel.active { display: flex; }
+
+/* ============================================================
+   NOISE TEXTURE OVERLAY
+   ============================================================ */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 9999;
+  opacity: 0.4;
+}
+
+/* ============================================================
+   MANGA HALFTONE BACKGROUND
+   ============================================================ */
+.halftone-bg {
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(123,0,255,0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(255,0,170,0.12) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(255,230,0,0.05) 0%, transparent 70%),
+    var(--c-bg);
+  pointer-events: none; z-index: 0;
+}
+
+/* ============================================================
+   ANIMATED SPEED LINES
+   ============================================================ */
+.speed-lines {
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 1;
+  overflow: hidden;
+  opacity: 0.06;
+}
+.speed-lines::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 300vmax; height: 300vmax;
+  transform: translate(-50%, -50%);
+  background: repeating-conic-gradient(
+    rgba(255,255,255,0.8) 0deg 0.3deg,
+    transparent 0.3deg 2deg
+  );
+  animation: spin 40s linear infinite;
+}
+@keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* ============================================================
+   SPLASH SCREEN
+   ============================================================ */
+#splash {
+  position: fixed; inset: 0;
+  z-index: 10000;
+  background: var(--c-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+#splash.hidden { opacity: 0; transform: scale(1.1); pointer-events: none; }
+
+.splash-logo {
+  font-family: var(--font-title);
+  font-size: clamp(3rem, 12vw, 6rem);
+  letter-spacing: 4px;
+  line-height: 1;
+  text-align: center;
+  animation: logoReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.splash-logo .line1 { color: var(--c-yellow); display: block; }
+.splash-logo .line2 { color: var(--c-white); display: block; font-size: 0.55em; }
+.splash-logo .line3 { color: var(--c-pink); display: block; font-size: 0.45em; letter-spacing: 2px; }
+
+@keyframes logoReveal {
+  0% { opacity: 0; transform: scale(0.5) skewX(-10deg); filter: blur(20px); }
+  60% { opacity: 1; transform: scale(1.05) skewX(-2deg); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1) skewX(0); }
+}
+
+.splash-aura {
+  position: absolute;
+  width: 300px; height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(123,0,255,0.4) 0%, transparent 70%);
+  animation: aura 2s ease-in-out infinite alternate;
+}
+@keyframes aura {
+  from { transform: scale(0.8); opacity: 0.6; }
+  to   { transform: scale(1.3); opacity: 1; }
+}
+
+.splash-star {
+  font-size: 3rem;
+  animation: starPulse 0.6s ease-in-out infinite alternate;
+  margin-top: 20px;
+}
+@keyframes starPulse {
+  from { transform: scale(1); opacity: 0.8; }
+  to   { transform: scale(1.2); opacity: 1; }
+}
+
+.splash-subtitle {
+  font-family: var(--font-hud);
+  font-size: 0.75rem;
+  color: var(--c-purple);
+  letter-spacing: 4px;
+  margin-top: 12px;
+  animation: fadeInUp 1s ease 0.8s both;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   BOTTOM NAV
+   ============================================================ */
+#nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: 72px;
+  background: linear-gradient(to top, rgba(13,0,16,0.98), rgba(22,0,31,0.95));
+  border-top: 1px solid var(--c-border);
+  display: flex; align-items: center; justify-content: space-around;
+  z-index: 1000;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 16px;
+  border: none; background: none; cursor: pointer;
+  color: var(--c-gray);
+  font-family: var(--font-hud);
+  font-size: 0.55rem;
+  letter-spacing: 1px;
+  transition: color 0.2s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+}
+.nav-btn .icon { font-size: 1.4rem; transition: transform 0.2s; }
+.nav-btn.active { color: var(--c-yellow); }
+.nav-btn.active .icon { transform: scale(1.2); filter: drop-shadow(0 0 8px var(--c-yellow)); }
+.nav-btn.active::after {
+  content: '';
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 2px;
+  background: var(--c-yellow);
+  border-radius: 0 0 4px 4px;
+  box-shadow: var(--shadow-gold);
+}
+
+/* ============================================================
+   HOME PANEL
+   ============================================================ */
+.hero-banner {
+  position: relative;
+  height: 260px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.hero-bg {
+  position: absolute; inset: 0;
+  background: 
+    linear-gradient(135deg, #2d0050 0%, #1a0033 40%, #0d0010 100%);
+}
+
+.hero-shapes {
+  position: absolute; inset: 0;
+  overflow: hidden;
+}
+.hero-diamond {
+  position: absolute;
+  border: 3px solid;
+  transform: rotate(45deg);
+  animation: diamondFloat 4s ease-in-out infinite;
+}
+.hero-diamond:nth-child(1) { width: 80px; height: 80px; top: 20%; left: 10%; border-color: rgba(255,230,0,0.4); animation-delay: 0s; }
+.hero-diamond:nth-child(2) { width: 50px; height: 50px; top: 60%; right: 15%; border-color: rgba(255,0,170,0.4); animation-delay: 1s; }
+.hero-diamond:nth-child(3) { width: 120px; height: 120px; top: -20%; right: 30%; border-color: rgba(123,0,255,0.3); animation-delay: 2s; }
+
+@keyframes diamondFloat {
+  0%, 100% { transform: rotate(45deg) translateY(0); }
+  50% { transform: rotate(45deg) translateY(-12px); }
+}
+
+.hero-content {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  justify-content: flex-end;
+  padding: 24px 20px;
+  background: linear-gradient(to top, rgba(13,0,16,0.9) 0%, transparent 60%);
+}
+
+.hero-tag {
+  font-family: var(--font-hud);
+  font-size: 0.6rem;
+  letter-spacing: 4px;
+  color: var(--c-pink);
+  margin-bottom: 6px;
+  text-shadow: var(--shadow-pink);
+}
+
+.hero-title {
+  font-family: var(--font-title);
+  font-size: clamp(2.2rem, 8vw, 3.5rem);
+  line-height: 0.9;
+  letter-spacing: 3px;
+}
+.hero-title .t1 { color: var(--c-yellow); display: block; }
+.hero-title .t2 { color: var(--c-white); display: block; font-size: 0.5em; }
+
+.hero-subtitle {
+  font-size: 0.75rem;
+  color: rgba(240,230,255,0.6);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.continue-btn {
+  margin: 16px 20px;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, var(--c-purple), var(--c-pink));
+  border: none; border-radius: var(--r);
+  color: white;
+  font-family: var(--font-hud);
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: var(--shadow-neon);
+  transition: transform 0.15s, box-shadow 0.15s;
+  position: relative;
+  overflow: hidden;
+  width: calc(100% - 40px);
+  flex-shrink: 0;
+}
+.continue-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.1) 100%);
+}
+.continue-btn:active { transform: scale(0.97); }
+.continue-btn .btn-icon { font-size: 1.4rem; }
+.continue-btn .btn-text { flex: 1; text-align: left; }
+.continue-btn .btn-sub { font-family: var(--font-body); font-size: 0.65rem; font-weight: 400; opacity: 0.8; display: block; margin-top: 2px; letter-spacing: 0; }
+
+.section-title {
+  font-family: var(--font-title);
+  font-size: 1.4rem;
+  letter-spacing: 3px;
+  padding: 16px 20px 8px;
+  color: var(--c-yellow);
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+}
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--c-border), transparent);
+}
+
+/* ============================================================
+   PARTS CARDS (horizontal scroll)
+   ============================================================ */
+.parts-scroll {
+  display: flex; gap: 14px;
+  padding: 0 20px 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.parts-scroll::-webkit-scrollbar { display: none; }
+
+.part-card {
+  flex-shrink: 0;
+  width: 140px;
+  background: var(--c-card);
+  border-radius: var(--r);
+  border: 1px solid var(--c-border);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+.part-card:active { transform: scale(0.95); }
+.part-card.selected { border-color: var(--c-yellow); box-shadow: var(--shadow-gold); }
+
+.part-card-art {
+  height: 90px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.part-card-gradient {
+  position: absolute; inset: 0;
+}
+
+.part-card-emoji {
+  position: relative; z-index: 1;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+  font-size: 3rem;
+}
+
+.part-card-info {
+  padding: 10px 10px 12px;
+}
+.part-card-num {
+  font-family: var(--font-hud);
+  font-size: 0.55rem;
+  color: var(--c-pink);
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+.part-card-name {
+  font-family: var(--font-title);
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  color: var(--c-white);
+  line-height: 1.2;
+}
+.part-card-eps {
+  font-size: 0.6rem;
+  color: rgba(240,230,255,0.5);
+  margin-top: 4px;
+}
+
+/* progress bar on card */
+.part-card-progress {
+  height: 3px;
+  background: var(--c-gray);
+  position: absolute; bottom: 0; left: 0; right: 0;
+}
+.part-card-progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--c-purple), var(--c-pink));
+  transition: width 0.5s ease;
+}
+
+/* ============================================================
+   STATS ROW
+   ============================================================ */
+.stats-row {
+  display: flex; gap: 12px;
+  padding: 0 20px 16px;
+  flex-shrink: 0;
+}
+.stat-box {
+  flex: 1;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r);
+  padding: 14px 12px;
+  text-align: center;
+}
+.stat-val {
+  font-family: var(--font-title);
+  font-size: 1.8rem;
+  color: var(--c-yellow);
+  letter-spacing: 2px;
+  line-height: 1;
+}
+.stat-lbl {
+  font-size: 0.6rem;
+  color: rgba(240,230,255,0.5);
+  letter-spacing: 1px;
+  margin-top: 4px;
+  font-family: var(--font-hud);
+}
+
+/* ============================================================
+   EPISODES LIST PANEL
+   ============================================================ */
+.ep-list-header {
+  padding: 20px 20px 12px;
+  background: linear-gradient(to bottom, var(--c-bg2), transparent);
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  flex-shrink: 0;
+}
+
+.ep-list-part-title {
+  font-family: var(--font-title);
+  font-size: 2rem;
+  letter-spacing: 3px;
+  color: var(--c-yellow);
+}
+.ep-list-part-sub {
+  font-size: 0.7rem;
+  color: rgba(240,230,255,0.5);
+  margin-top: 4px;
+  letter-spacing: 1px;
+}
+
+.ep-list-progress-bar {
+  height: 4px;
+  background: var(--c-gray);
+  border-radius: 2px;
+  margin-top: 12px;
+  overflow: hidden;
+}
+.ep-list-progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--c-purple), var(--c-pink), var(--c-yellow));
+  transition: width 0.6s ease;
+}
+
+.ep-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(90,0,144,0.2);
+  cursor: pointer;
+  transition: background 0.15s;
+  position: relative;
+  flex-shrink: 0;
+}
+.ep-item:active { background: rgba(123,0,255,0.1); }
+.ep-item.watched { opacity: 0.6; }
+.ep-item.currently-watching::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--c-yellow);
+  box-shadow: var(--shadow-gold);
+}
+
+.ep-thumb {
+  width: 72px; height: 48px;
+  border-radius: 8px;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+}
+.ep-thumb-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.ep-item:hover .ep-thumb-overlay { opacity: 1; }
+
+.ep-meta { flex: 1; min-width: 0; }
+.ep-num {
+  font-family: var(--font-hud);
+  font-size: 0.55rem;
+  color: var(--c-pink);
+  letter-spacing: 2px;
+}
+.ep-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--c-white);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ep-duration {
+  font-size: 0.65rem;
+  color: rgba(240,230,255,0.4);
+  margin-top: 3px;
+}
+
+.ep-status {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+/* progress line inside ep item */
+.ep-progress-mini {
+  position: absolute; bottom: 0; left: 20px; right: 20px;
+  height: 2px;
+  background: var(--c-gray);
+  border-radius: 1px;
+}
+.ep-progress-mini-fill {
+  height: 100%;
+  background: var(--c-purple);
+}
+
+/* ============================================================
+   PLAYER PANEL
+   ============================================================ */
+#playerPanel {
+  background: #000;
+  padding-bottom: 0;
+}
+
+.player-video-wrap {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+  background: #000;
+  flex-shrink: 0;
+}
+.player-video-wrap iframe,
+.player-video-wrap video {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: none;
+}
+
+.player-info-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--c-bg);
+}
+
+.player-info {
+  padding: 16px 20px;
+}
+.player-part-tag {
+  font-family: var(--font-hud);
+  font-size: 0.6rem;
+  color: var(--c-pink);
+  letter-spacing: 3px;
+  margin-bottom: 6px;
+}
+.player-ep-title {
+  font-family: var(--font-title);
+  font-size: 1.5rem;
+  letter-spacing: 2px;
+  color: var(--c-yellow);
+  line-height: 1.2;
+}
+.player-ep-num {
+  font-size: 0.75rem;
+  color: rgba(240,230,255,0.5);
+  margin-top: 6px;
+}
+
+.player-actions {
+  display: flex; gap: 10px;
+  margin-top: 16px;
+}
+.player-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--c-border);
+  background: var(--c-card);
+  color: var(--c-white);
+  font-family: var(--font-hud);
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.player-btn .icon { font-size: 1.2rem; }
+.player-btn.active, .player-btn:active { background: rgba(123,0,255,0.3); border-color: var(--c-purple); }
+.player-btn.fav-active { color: var(--c-pink); border-color: var(--c-pink); }
+
+.player-next-btn {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--c-purple), var(--c-pink));
+  border: none; border-radius: var(--r);
+  color: white;
+  font-family: var(--font-hud);
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  box-shadow: var(--shadow-neon);
+  transition: transform 0.15s;
+  margin-top: 16px;
+}
+.player-next-btn:active { transform: scale(0.97); }
+
+.player-description {
+  margin-top: 16px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: rgba(240,230,255,0.6);
+  border-left: 3px solid var(--c-purple);
+  padding-left: 12px;
+}
+
+/* ============================================================
+   FAVORITES PANEL
+   ============================================================ */
+.fav-empty {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px;
+  padding: 40px;
+  text-align: center;
+}
+.fav-empty-icon { font-size: 4rem; opacity: 0.4; }
+.fav-empty-text {
+  font-family: var(--font-title);
+  font-size: 1.2rem;
+  letter-spacing: 2px;
+  color: rgba(240,230,255,0.4);
+}
+
+.fav-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(90,0,144,0.2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fav-item:active { background: rgba(123,0,255,0.1); }
+
+/* ============================================================
+   HISTORY PANEL
+   ============================================================ */
+.history-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(90,0,144,0.2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.history-badge {
+  flex-shrink: 0;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--c-violet), var(--c-purple));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem;
+  border: 2px solid var(--c-border);
+}
+
+/* ============================================================
+   DRIVE CONFIG MODAL
+   ============================================================ */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 5000;
+  display: flex; align-items: flex-end;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+
+.modal-sheet {
+  width: 100%;
+  background: var(--c-bg2);
+  border-radius: 20px 20px 0 0;
+  border-top: 1px solid var(--c-border);
+  padding: 24px 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  transform: translateY(100%);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.modal-overlay.open .modal-sheet { transform: translateY(0); }
+
+.modal-handle {
+  width: 40px; height: 4px;
+  background: var(--c-border);
+  border-radius: 2px;
+  margin: 0 auto 20px;
+}
+
+.modal-title {
+  font-family: var(--font-title);
+  font-size: 1.6rem;
+  letter-spacing: 3px;
+  color: var(--c-yellow);
+  margin-bottom: 6px;
+}
+.modal-sub {
+  font-size: 0.75rem;
+  color: rgba(240,230,255,0.5);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.field-label {
+  font-family: var(--font-hud);
+  font-size: 0.65rem;
+  letter-spacing: 2px;
+  color: var(--c-pink);
+  margin-bottom: 8px;
+}
+.field-input {
+  width: 100%;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  color: var(--c-white);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  outline: none;
+  margin-bottom: 16px;
+  transition: border-color 0.2s;
+}
+.field-input:focus { border-color: var(--c-purple); }
+
+.modal-save-btn {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--c-purple), var(--c-pink));
+  border: none; border-radius: var(--r);
+  color: white;
+  font-family: var(--font-hud);
+  font-size: 0.9rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  box-shadow: var(--shadow-neon);
+  transition: transform 0.15s;
+}
+.modal-save-btn:active { transform: scale(0.97); }
+
+/* ============================================================
+   ORA ORA ANIMATION OVERLAY
+   ============================================================ */
+#oraOverlay {
+  position: fixed; inset: 0;
+  z-index: 8000;
+  pointer-events: none;
+  opacity: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.3s;
+}
+#oraOverlay.show { opacity: 1; }
+
+.ora-text {
+  font-family: var(--font-title);
+  font-size: clamp(4rem, 20vw, 8rem);
+  color: var(--c-yellow);
+  text-shadow: 
+    4px 4px 0 var(--c-purple),
+    8px 8px 0 rgba(123,0,255,0.4),
+    -2px -2px 0 var(--c-pink);
+  animation: oraPunch 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  letter-spacing: 6px;
+}
+@keyframes oraPunch {
+  0% { transform: scale(0) rotate(-20deg); opacity: 0; }
+  60% { transform: scale(1.2) rotate(5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* ============================================================
+   SETTINGS / DRIVE SETUP PANEL
+   ============================================================ */
+.settings-group {
+  padding: 16px 20px;
+  flex-shrink: 0;
+}
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r);
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.settings-row:active { background: rgba(123,0,255,0.15); }
+.settings-row-label { font-size: 0.85rem; color: var(--c-white); }
+.settings-row-sub { font-size: 0.65rem; color: rgba(240,230,255,0.4); margin-top: 2px; }
+.settings-row-icon { font-size: 1.3rem; opacity: 0.7; }
+
+/* ============================================================
+   TOAST NOTIFICATION
+   ============================================================ */
+#toast {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-80px);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: 100px;
+  padding: 10px 20px;
+  font-family: var(--font-hud);
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  color: var(--c-yellow);
+  z-index: 9000;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  box-shadow: var(--shadow-neon);
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+.back-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px 20px 0;
+  cursor: pointer;
+  color: rgba(240,230,255,0.6);
+  font-family: var(--font-hud);
+  font-size: 0.65rem;
+  letter-spacing: 2px;
+  flex-shrink: 0;
+}
+.back-btn:active { color: var(--c-white); }
+
+.neon-divider {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--c-border), transparent);
+  margin: 8px 20px;
+  flex-shrink: 0;
+}
+
+/* Drive config status badge */
+.drive-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-radius: 100px;
+  font-family: var(--font-hud);
+  font-size: 0.6rem;
+  letter-spacing: 1px;
+  margin: 0 20px 16px;
+  flex-shrink: 0;
+}
+.drive-status.connected { background: rgba(0,255,100,0.1); border: 1px solid rgba(0,255,100,0.3); color: #00ff64; }
+.drive-status.disconnected { background: rgba(255,0,0,0.1); border: 1px solid rgba(255,0,0,0.3); color: #ff4444; }
+.drive-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: blink 1.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ============================================================
+   CHARACTER CARDS (home)
+   ============================================================ */
+.chars-scroll {
+  display: flex; gap: 12px;
+  padding: 0 20px 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.chars-scroll::-webkit-scrollbar { display: none; }
+
+.char-card {
+  flex-shrink: 0;
+  width: 80px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.char-avatar {
+  width: 70px; height: 70px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.2rem;
+  border: 2px solid var(--c-border);
+  position: relative;
+  overflow: hidden;
+}
+.char-avatar-glow {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  animation: glowPulse 3s ease-in-out infinite;
+}
+@keyframes glowPulse {
+  0%,100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+.char-name {
+  font-family: var(--font-hud);
+  font-size: 0.55rem;
+  letter-spacing: 1px;
+  text-align: center;
+  color: rgba(240,230,255,0.7);
+  line-height: 1.3;
+}
+</style>
+</head>
+<body>
+
+<div class="halftone-bg"></div>
+<div class="speed-lines"></div>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-aura"></div>
+  <div class="splash-logo">
+    <span class="line1">JOJO'S</span>
+    <span class="line2">BIZARRE ADVENTURE</span>
+    <span class="line3">— PERSONAL VIEWER —</span>
+  </div>
+  <div class="splash-star">⭐</div>
+  <div class="splash-subtitle">LOADING YOUR STAND...</div>
+</div>
+
+<!-- ORA ORA OVERLAY -->
+<div id="oraOverlay">
+  <div class="ora-text">ORA!</div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- DRIVE CONFIG MODAL -->
+<div class="modal-overlay" id="driveModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">GOOGLE DRIVE</div>
+    <div class="modal-sub">Configure your Google Drive folder ID for each part. Find the folder ID in the Drive URL: drive.google.com/drive/folders/<strong>FOLDER_ID</strong></div>
+
+    <div id="driveFields"></div>
+
+    <div class="field-label">API KEY (optionnel)</div>
+    <input class="field-input" id="apiKeyInput" type="text" placeholder="AIzaSy... (Google Drive API Key)">
+
+    <button class="modal-save-btn" onclick="saveDriveConfig()">💾 SAUVEGARDER</button>
+    <button style="width:100%;padding:12px;background:none;border:none;color:rgba(240,230,255,0.4);font-family:var(--font-hud);font-size:0.7rem;letter-spacing:2px;cursor:pointer;margin-top:10px;" onclick="closeModal()">ANNULER</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     HOME PANEL
+     ============================================================ -->
+<div class="panel active" id="homePanel">
+  
+  <div class="hero-banner">
+    <div class="hero-bg"></div>
+    <div class="hero-shapes">
+      <div class="hero-diamond"></div>
+      <div class="hero-diamond"></div>
+      <div class="hero-diamond"></div>
+    </div>
+    <div class="hero-content">
+      <div class="hero-tag">★ PERSONAL VIEWER ★</div>
+      <div class="hero-title">
+        <span class="t1">JoJo's Bizarre</span>
+        <span class="t2">ADVENTURE</span>
+      </div>
+      <div class="hero-subtitle" id="heroSub">Sélectionne une partie pour commencer</div>
+    </div>
+  </div>
+
+  <button class="continue-btn" id="continueBtn" onclick="continueWatching()" style="display:none;">
+    <div class="btn-icon">▶️</div>
+    <div class="btn-text">
+      CONTINUER
+      <span class="btn-sub" id="continueSub">Reprendre le dernier épisode</span>
+    </div>
+    <div>›</div>
+  </button>
+
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-val" id="statWatched">0</div>
+      <div class="stat-lbl">ÉPISODES VUS</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="statFavs">0</div>
+      <div class="stat-lbl">FAVORIS</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="statTotal">0</div>
+      <div class="stat-lbl">TOTAL EPS</div>
+    </div>
+  </div>
+
+  <div class="section-title">📺 LES PARTIES</div>
+  <div class="parts-scroll" id="partsScroll"></div>
+
+  <div class="section-title">👁️ PERSONNAGES</div>
+  <div class="chars-scroll" id="charsScroll"></div>
+
+  <div class="neon-divider"></div>
+</div>
+
+<!-- ============================================================
+     EPISODES LIST PANEL
+     ============================================================ -->
+<div class="panel" id="epsPanel">
+  <div class="back-btn" onclick="goBack('homePanel')">← RETOUR</div>
+  <div class="ep-list-header">
+    <div class="ep-list-part-title" id="epListTitle"></div>
+    <div class="ep-list-part-sub" id="epListSub"></div>
+    <div class="ep-list-progress-bar">
+      <div class="ep-list-progress-fill" id="epListProgress"></div>
+    </div>
+  </div>
+  <div id="epsList"></div>
+</div>
+
+<!-- ============================================================
+     PLAYER PANEL
+     ============================================================ -->
+<div class="panel" id="playerPanel">
+  <div class="player-video-wrap">
+    <div id="playerPlaceholder" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0010;gap:12px;">
+      <div style="font-size:3rem;">📺</div>
+      <div style="font-family:var(--font-hud);font-size:0.7rem;letter-spacing:2px;color:rgba(240,230,255,0.4);">CONFIGURE GOOGLE DRIVE</div>
+      <button style="padding:10px 20px;background:var(--c-purple);border:none;border-radius:8px;color:white;font-family:var(--font-hud);font-size:0.7rem;letter-spacing:1px;cursor:pointer;" onclick="openModal()">⚙️ CONFIGURER</button>
+    </div>
+    <iframe id="drivePlayer" allow="autoplay; fullscreen" allowfullscreen style="display:none;"></iframe>
+  </div>
+
+  <div class="player-info-scroll">
+    <div class="back-btn" onclick="goBack('epsPanel')">← ÉPISODES</div>
+    <div class="player-info">
+      <div class="player-part-tag" id="playerPartTag"></div>
+      <div class="player-ep-title" id="playerEpTitle"></div>
+      <div class="player-ep-num" id="playerEpNum"></div>
+
+      <div class="player-actions">
+        <button class="player-btn" id="favBtn" onclick="toggleFavorite()">
+          <span class="icon">🤍</span>
+          <span>FAVORIS</span>
+        </button>
+        <button class="player-btn" onclick="markWatched()">
+          <span class="icon">✅</span>
+          <span>VU</span>
+        </button>
+        <button class="player-btn" onclick="shareEpisode()">
+          <span class="icon">📤</span>
+          <span>PARTAGER</span>
+        </button>
+      </div>
+
+      <button class="player-next-btn" id="nextBtn" onclick="playNext()">
+        ÉPISODE SUIVANT ›
+      </button>
+
+      <div class="player-description" id="playerDesc"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     FAVORITES PANEL
+     ============================================================ -->
+<div class="panel" id="favsPanel">
+  <div class="section-title">🤍 FAVORIS</div>
+  <div id="favsList"></div>
+</div>
+
+<!-- ============================================================
+     HISTORY PANEL
+     ============================================================ -->
+<div class="panel" id="histPanel">
+  <div class="section-title">📜 HISTORIQUE</div>
+  <div style="display:flex;gap:8px;padding:0 20px 12px;flex-shrink:0;">
+    <button style="flex:1;padding:10px;background:rgba(255,0,0,0.1);border:1px solid rgba(255,0,0,0.3);border-radius:10px;color:#ff6666;font-family:var(--font-hud);font-size:0.6rem;letter-spacing:1px;cursor:pointer;" onclick="clearHistory()">🗑️ EFFACER</button>
+  </div>
+  <div id="histList"></div>
+</div>
+
+<!-- ============================================================
+     SETTINGS PANEL
+     ============================================================ -->
+<div class="panel" id="settingsPanel">
+  <div class="section-title">⚙️ PARAMÈTRES</div>
+
+  <div id="driveStatusBadge" class="drive-status disconnected">
+    <div class="drive-status-dot"></div>
+    <span>GOOGLE DRIVE NON CONFIGURÉ</span>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-row" onclick="openModal()">
+      <div>
+        <div class="settings-row-label">📂 Google Drive</div>
+        <div class="settings-row-sub">Configurer les dossiers par partie</div>
+      </div>
+      <div class="settings-row-icon">›</div>
+    </div>
+    <div class="settings-row" onclick="resetProgress()">
+      <div>
+        <div class="settings-row-label">🔄 Réinitialiser la progression</div>
+        <div class="settings-row-sub">Effacer tout l'historique de visionnage</div>
+      </div>
+      <div class="settings-row-icon">›</div>
+    </div>
+    <div class="settings-row" onclick="exportData()">
+      <div>
+        <div class="settings-row-label">💾 Exporter les données</div>
+        <div class="settings-row-sub">Sauvegarder favoris et progression</div>
+      </div>
+      <div class="settings-row-icon">›</div>
+    </div>
+    <div class="settings-row" onclick="importData()">
+      <div>
+        <div class="settings-row-label">📥 Importer les données</div>
+        <div class="settings-row-sub">Restaurer une sauvegarde</div>
+      </div>
+      <div class="settings-row-icon">›</div>
+    </div>
+  </div>
+
+  <div class="section-title" style="font-size:1rem;">📱 À PROPOS</div>
+  <div class="settings-group">
+    <div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r);padding:16px;font-size:0.75rem;line-height:1.8;color:rgba(240,230,255,0.6);">
+      <strong style="color:var(--c-yellow);font-family:var(--font-title);font-size:1rem;letter-spacing:2px;">JOJO VIEWER v1.0</strong><br>
+      Application personnelle pour regarder JoJo's Bizarre Adventure depuis Google Drive.<br><br>
+      <em style="color:var(--c-pink);">"Your next line is: This app is amazing!"</em>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav id="nav">
+  <button class="nav-btn active" data-panel="homePanel" onclick="switchPanel('homePanel', this)">
+    <span class="icon">🏠</span>
+    <span>ACCUEIL</span>
+  </button>
+  <button class="nav-btn" data-panel="favsPanel" onclick="switchPanel('favsPanel', this)">
+    <span class="icon">🤍</span>
+    <span>FAVORIS</span>
+  </button>
+  <button class="nav-btn" data-panel="histPanel" onclick="switchPanel('histPanel', this)">
+    <span class="icon">📜</span>
+    <span>HISTORIQUE</span>
+  </button>
+  <button class="nav-btn" data-panel="settingsPanel" onclick="switchPanel('settingsPanel', this)">
+    <span class="icon">⚙️</span>
+    <span>RÉGLAGES</span>
+  </button>
+</nav>
+
+<script>
+/* ============================================================
+   DATA — JOJO PARTS & EPISODES
+   ============================================================ */
+const PARTS = [
+  {
+    id: 1, name: "Phantom Blood",
+    emoji: "🧛", episodes: 9,
+    color: "#8B0000", color2: "#3d0000",
+    description: "L'histoire de Jonathan Joestar et son rival Dio Brando.",
+    epTitles: [
+      "Dio Brando, l'immigré","Un homme rusé","L'ennemi Dio Brando",
+      "Le sang de Zeppeli","Le voyage vers l'Angleterre","Mort à Windknight's Lot",
+      "Deux géants affrontent","La flamme du Hamon","Le voyage de l'homme noble"
+    ]
+  },
+  {
+    id: 2, name: "Battle Tendency",
+    emoji: "🏛️", episodes: 17,
+    color: "#b85c00", color2: "#5a2a00",
+    description: "Joseph Joestar affronte les Pillar Men dans les années 1930.",
+    epTitles: [
+      "Joseph Joestar — Ses techniques et ses confessions",
+      "L'étrange Mexicain","Le Pillar Man","La croix et la bague vampirique",
+      "Le plan de Joseph Joestar","Les quatre Pietra","La rivière rouge de l'histoire",
+      "Le combat de César","Mes amis de jeunesse","La menace des Pillar Men",
+      "Kars l'ultime","La naissance de la Lumière","Le sang de César",
+      "Le vrai guerrier","Joseph Joestar — Le plus sournois","L'invincible Kars!","Fin et Épilogue"
+    ]
+  },
+  {
+    id: 3, name: "Stardust Crusaders",
+    emoji: "⭐", episodes: 48,
+    color: "#1a3a6b", color2: "#0a1a40",
+    description: "Jotaro Kujo et ses alliés partent en Égypte pour vaincre DIO.",
+    epTitles: Array.from({length:48}, (_,i) => `Stardust Crusaders — Épisode ${i+1}`)
+  },
+  {
+    id: 4, name: "Diamond is Unbreakable",
+    emoji: "💎", episodes: 39,
+    color: "#1a6b3a", color2: "#0a3a1a",
+    description: "Josuke Higashikata protège la ville de Morioh contre Yoshikage Kira.",
+    epTitles: Array.from({length:39}, (_,i) => `Diamond is Unbreakable — Épisode ${i+1}`)
+  },
+  {
+    id: 5, name: "Golden Wind",
+    emoji: "🌊", episodes: 39,
+    color: "#6b6b00", color2: "#3a3a00",
+    description: "Giorno Giovanna rêve de rejoindre la mafia pour changer l'Italie.",
+    epTitles: Array.from({length:39}, (_,i) => `Golden Wind — Épisode ${i+1}`)
+  },
+  {
+    id: 6, name: "Stone Ocean",
+    emoji: "🌊", episodes: 38,
+    color: "#1a5a5a", color2: "#0a2a2a",
+    description: "Jolyne Cujoh s'échappe de prison pour sauver son père.",
+    epTitles: Array.from({length:38}, (_,i) => `Stone Ocean — Épisode ${i+1}`)
+  }
+];
+
+const CHARACTERS = [
+  { name: "Jotaro", emoji: "🎩", color: "#1a3a6b" },
+  { name: "DIO", emoji: "🧛", color: "#8B0000" },
+  { name: "Giorno", emoji: "🌸", color: "#6b6b00" },
+  { name: "Josuke", emoji: "💎", color: "#1a6b3a" },
+  { name: "Joseph", emoji: "👑", color: "#b85c00" },
+  { name: "Jolyne", emoji: "🦋", color: "#1a5a5a" },
+  { name: "Rohan", emoji: "✏️", color: "#2a1a4a" },
+  { name: "Kira", emoji: "💣", color: "#4a2a1a" },
+];
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let state = {
+  watched: {},      // { "partId-epIdx": true }
+  progress: {},     // { "partId-epIdx": seconds }
+  favorites: [],    // ["partId-epIdx", ...]
+  history: [],      // [{partId, epIdx, ts}]
+  lastEp: null,     // {partId, epIdx}
+  driveConfig: {},  // { part1: "folderId", apiKey: "" }
+  // manually add drive file IDs per episode: { "partId-epIdx": "fileId" }
+  driveFiles: {}
+};
+
+function saveState() {
+  localStorage.setItem('jojo_state', JSON.stringify(state));
+}
+function loadState() {
+  const s = localStorage.getItem('jojo_state');
+  if (s) {
+    try { state = { ...state, ...JSON.parse(s) }; } catch(e) {}
+  }
+}
+
+/* ============================================================
+   CURRENT SELECTION
+   ============================================================ */
+let currentPartId = null;
+let currentEpIdx = null;
+
+/* ============================================================
+   INIT
+   ============================================================ */
+window.addEventListener('load', () => {
+  loadState();
+  buildDriveFields();
+  buildPartsScroll();
+  buildCharsScroll();
+  updateHomeStats();
+  updateContinueBtn();
+  updateDriveStatus();
+
+  setTimeout(() => {
+    document.getElementById('splash').classList.add('hidden');
+  }, 2200);
+});
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+function switchPanel(panelId, btn) {
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.remove('active');
+    p.style.display = 'none';
+  });
+  const panel = document.getElementById(panelId);
+  panel.classList.add('active');
+  panel.style.display = 'flex';
+
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  if (panelId === 'favsPanel') renderFavorites();
+  if (panelId === 'histPanel') renderHistory();
+}
+
+function goBack(panelId) {
+  switchPanel(panelId, document.querySelector(`[data-panel="${panelId}"]`));
+  if (panelId === 'homePanel') {
+    // Reset nav highlight
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('[data-panel="homePanel"]').classList.add('active');
+  }
+}
+
+function showEpsPanel(partId) {
+  currentPartId = partId;
+  const part = PARTS.find(p => p.id === partId);
+
+  document.getElementById('epListTitle').textContent = part.name.toUpperCase();
+  document.getElementById('epListSub').textContent = `PART ${part.id} · ${part.episodes} ÉPISODES`;
+
+  // progress
+  const watched = Object.keys(state.watched).filter(k => k.startsWith(partId+'-') && state.watched[k]).length;
+  const pct = Math.round(watched / part.episodes * 100);
+  document.getElementById('epListProgress').style.width = pct + '%';
+
+  // build list
+  const list = document.getElementById('epsList');
+  list.innerHTML = '';
+
+  part.epTitles.forEach((title, i) => {
+    const key = `${partId}-${i}`;
+    const isWatched = state.watched[key];
+    const isCurrent = state.lastEp && state.lastEp.partId === partId && state.lastEp.epIdx === i;
+    const prog = state.progress[key] || 0;
+
+    const item = document.createElement('div');
+    item.className = `ep-item${isWatched?' watched':''}${isCurrent?' currently-watching':''}`;
+    item.onclick = () => openPlayer(partId, i);
+
+    item.innerHTML = `
+      <div class="ep-thumb">
+        <div style="position:relative;z-index:1;">${part.emoji}</div>
+        <div class="ep-thumb-overlay">▶</div>
+      </div>
+      <div class="ep-meta">
+        <div class="ep-num">ÉP. ${String(i+1).padStart(2,'0')}</div>
+        <div class="ep-title">${title}</div>
+        <div class="ep-duration">~24 min</div>
+      </div>
+      <div class="ep-status">${isWatched ? '✅' : isCurrent ? '▶️' : '○'}</div>
+      ${prog > 0 && !isWatched ? `<div class="ep-progress-mini"><div class="ep-progress-mini-fill" style="width:${Math.min(100,prog)}%"></div></div>` : ''}
+    `;
+    list.appendChild(item);
+  });
+
+  switchPanel('epsPanel');
+  document.getElementById('epsPanel').scrollTop = 0;
+}
+
+/* ============================================================
+   PLAYER
+   ============================================================ */
+function openPlayer(partId, epIdx) {
+  currentPartId = partId;
+  currentEpIdx = epIdx;
+
+  const part = PARTS.find(p => p.id === partId);
+  const key = `${partId}-${epIdx}`;
+
+  // Update last episode
+  state.lastEp = { partId, epIdx };
+
+  // Add to history
+  const histEntry = { partId, epIdx, ts: Date.now() };
+  state.history = state.history.filter(h => !(h.partId === partId && h.epIdx === epIdx));
+  state.history.unshift(histEntry);
+  if (state.history.length > 50) state.history = state.history.slice(0, 50);
+
+  saveState();
+  updateHomeStats();
+  updateContinueBtn();
+
+  // UI
+  document.getElementById('playerPartTag').textContent = `PART ${part.id} — ${part.name.toUpperCase()}`;
+  document.getElementById('playerEpTitle').textContent = part.epTitles[epIdx];
+  document.getElementById('playerEpNum').textContent = `Épisode ${epIdx+1} sur ${part.episodes}`;
+  document.getElementById('playerDesc').textContent = part.description;
+
+  // Next btn
+  const nextBtn = document.getElementById('nextBtn');
+  if (epIdx < part.episodes - 1) {
+    nextBtn.style.display = 'flex';
+    nextBtn.textContent = `ÉPISODE SUIVANT (${epIdx+2}) ›`;
+  } else {
+    nextBtn.style.display = 'none';
+  }
+
+  // Fav btn
+  updateFavBtn();
+
+  // Load video
+  loadVideo(partId, epIdx);
+
+  // ORA ORA effect
+  showOra();
+
+  switchPanel('playerPanel');
+}
+
+function loadVideo(partId, epIdx) {
+  const key = `${partId}-${epIdx}`;
+  const fileId = state.driveFiles[key] || getAutoFileId(partId, epIdx);
+  const folderKey = `part${partId}`;
+  const folderId = state.driveConfig[folderKey];
+
+  const player = document.getElementById('drivePlayer');
+  const placeholder = document.getElementById('playerPlaceholder');
+
+  if (fileId) {
+    // Direct file embed
+    player.src = `https://drive.google.com/file/d/${fileId}/preview`;
+    player.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else if (folderId) {
+    // Folder preview fallback
+    showToast('📂 Dossier Drive configuré — ajoutez les IDs de fichiers');
+    player.style.display = 'none';
+    placeholder.style.display = 'flex';
+    placeholder.innerHTML = `
+      <div style="text-align:center;padding:20px;">
+        <div style="font-size:2.5rem;margin-bottom:12px;">📂</div>
+        <div style="font-family:var(--font-hud);font-size:0.7rem;letter-spacing:2px;color:var(--c-yellow);margin-bottom:8px)">DOSSIER CONFIGURÉ</div>
+        <div style="font-size:0.7rem;color:rgba(240,230,255,0.5);margin-bottom:16px;line-height:1.5;">Ajoutez l'ID du fichier vidéo<br>dans les réglages pour lancer la vidéo.</div>
+        <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" style="display:inline-block;padding:10px 20px;background:var(--c-purple);border-radius:8px;color:white;font-family:var(--font-hud);font-size:0.65rem;letter-spacing:1px;text-decoration:none;">OUVRIR DRIVE ↗</a>
+      </div>
+    `;
+  } else {
+    player.style.display = 'none';
+    placeholder.style.display = 'flex';
+    placeholder.innerHTML = `
+      <div style="text-align:center;padding:20px;">
+        <div style="font-size:2.5rem;margin-bottom:12px;">📺</div>
+        <div style="font-family:var(--font-hud);font-size:0.7rem;letter-spacing:2px;color:rgba(240,230,255,0.4);margin-bottom:16px;">CONFIGURE GOOGLE DRIVE</div>
+        <button style="padding:10px 20px;background:var(--c-purple);border:none;border-radius:8px;color:white;font-family:var(--font-hud);font-size:0.7rem;letter-spacing:1px;cursor:pointer;" onclick="openModal()">⚙️ CONFIGURER</button>
+      </div>
+    `;
+  }
+}
+
+function getAutoFileId(partId, epIdx) {
+  // Placeholder — user fills these in via settings
+  return null;
+}
+
+function playNext() {
+  if (currentEpIdx < PARTS.find(p => p.id === currentPartId).episodes - 1) {
+    openPlayer(currentPartId, currentEpIdx + 1);
+  }
+}
+
+function markWatched() {
+  const key = `${currentPartId}-${currentEpIdx}`;
+  state.watched[key] = !state.watched[key];
+  saveState();
+  updateHomeStats();
+  showToast(state.watched[key] ? '✅ Marqué comme vu !' : '○ Marqué comme non vu');
+}
+
+function toggleFavorite() {
+  const key = `${currentPartId}-${currentEpIdx}`;
+  const idx = state.favorites.indexOf(key);
+  if (idx === -1) {
+    state.favorites.push(key);
+    showToast('🤍 Ajouté aux favoris !');
+  } else {
+    state.favorites.splice(idx, 1);
+    showToast('💔 Retiré des favoris');
+  }
+  saveState();
+  updateHomeStats();
+  updateFavBtn();
+}
+
+function updateFavBtn() {
+  const key = `${currentPartId}-${currentEpIdx}`;
+  const btn = document.getElementById('favBtn');
+  const isFav = state.favorites.includes(key);
+  btn.querySelector('.icon').textContent = isFav ? '❤️' : '🤍';
+  if (isFav) btn.classList.add('fav-active');
+  else btn.classList.remove('fav-active');
+}
+
+function shareEpisode() {
+  if (navigator.share) {
+    const part = PARTS.find(p => p.id === currentPartId);
+    navigator.share({
+      title: `JoJo — ${part.epTitles[currentEpIdx]}`,
+      text: `Je regarde JoJo's Bizarre Adventure: ${part.name} — Épisode ${currentEpIdx+1}`
+    });
+  } else {
+    showToast('📤 Partage non disponible');
+  }
+}
+
+/* ============================================================
+   HOME BUILDERS
+   ============================================================ */
+function buildPartsScroll() {
+  const container = document.getElementById('partsScroll');
+  PARTS.forEach(part => {
+    const watched = Object.keys(state.watched).filter(k => k.startsWith(part.id+'-') && state.watched[k]).length;
+    const pct = Math.round(watched / part.episodes * 100);
+
+    const card = document.createElement('div');
+    card.className = 'part-card';
+    card.onclick = () => showEpsPanel(part.id);
+    card.innerHTML = `
+      <div class="part-card-art">
+        <div class="part-card-gradient" style="background:linear-gradient(135deg,${part.color},${part.color2})"></div>
+        <div class="part-card-emoji">${part.emoji}</div>
+      </div>
+      <div class="part-card-info">
+        <div class="part-card-num">PART ${part.id}</div>
+        <div class="part-card-name">${part.name}</div>
+        <div class="part-card-eps">${part.episodes} épisodes · ${pct}%</div>
+      </div>
+      <div class="part-card-progress">
+        <div class="part-card-progress-fill" style="width:${pct}%"></div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function buildCharsScroll() {
+  const container = document.getElementById('charsScroll');
+  CHARACTERS.forEach(char => {
+    const card = document.createElement('div');
+    card.className = 'char-card';
+    card.innerHTML = `
+      <div class="char-avatar" style="background:${char.color}20;border-color:${char.color}60;">
+        <div class="char-avatar-glow" style="background:radial-gradient(circle,${char.color}50,transparent 70%)"></div>
+        <span style="position:relative;z-index:1;">${char.emoji}</span>
+      </div>
+      <div class="char-name">${char.name.toUpperCase()}</div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function updateHomeStats() {
+  const totalEps = PARTS.reduce((s, p) => s + p.episodes, 0);
+  const watchedCount = Object.values(state.watched).filter(Boolean).length;
+  document.getElementById('statWatched').textContent = watchedCount;
+  document.getElementById('statFavs').textContent = state.favorites.length;
+  document.getElementById('statTotal').textContent = totalEps;
+}
+
+function updateContinueBtn() {
+  const btn = document.getElementById('continueBtn');
+  const sub = document.getElementById('continueSub');
+  const heroSub = document.getElementById('heroSub');
+
+  if (state.lastEp) {
+    const part = PARTS.find(p => p.id === state.lastEp.partId);
+    btn.style.display = 'flex';
+    sub.textContent = `${part.name} · Épisode ${state.lastEp.epIdx + 1}`;
+    heroSub.textContent = `Reprends là où tu t'es arrêté(e)`;
+  } else {
+    btn.style.display = 'none';
+    heroSub.textContent = 'Sélectionne une partie pour commencer';
+  }
+}
+
+function continueWatching() {
+  if (state.lastEp) {
+    currentPartId = state.lastEp.partId;
+    showEpsPanel(currentPartId);
+    setTimeout(() => openPlayer(state.lastEp.partId, state.lastEp.epIdx), 100);
+  }
+}
+
+/* ============================================================
+   FAVORITES & HISTORY
+   ============================================================ */
+function renderFavorites() {
+  const container = document.getElementById('favsList');
+  container.innerHTML = '';
+
+  if (state.favorites.length === 0) {
+    container.innerHTML = `
+      <div class="fav-empty">
+        <div class="fav-empty-icon">🤍</div>
+        <div class="fav-empty-text">AUCUN FAVORI</div>
+        <div style="font-size:0.75rem;color:rgba(240,230,255,0.4);">Appuyez sur 🤍 dans le lecteur</div>
+      </div>
+    `;
+    return;
+  }
+
+  state.favorites.forEach(key => {
+    const [partId, epIdx] = key.split('-').map(Number);
+    const part = PARTS.find(p => p.id === partId);
+    if (!part) return;
+
+    const item = document.createElement('div');
+    item.className = 'fav-item';
+    item.onclick = () => openPlayer(partId, epIdx);
+    item.innerHTML = `
+      <div style="width:48px;height:48px;border-radius:10px;background:${part.color}20;border:1px solid ${part.color}60;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0;">${part.emoji}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-family:var(--font-hud);font-size:0.55rem;color:var(--c-pink);letter-spacing:2px;">PART ${part.id}</div>
+        <div style="font-size:0.85rem;font-weight:700;color:var(--c-white);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${part.epTitles[epIdx]}</div>
+        <div style="font-size:0.65rem;color:rgba(240,230,255,0.4);margin-top:2px;">Épisode ${epIdx+1}</div>
+      </div>
+      <button onclick="event.stopPropagation();removeFav('${key}')" style="background:none;border:none;font-size:1.2rem;cursor:pointer;padding:8px;">❌</button>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function removeFav(key) {
+  state.favorites = state.favorites.filter(f => f !== key);
+  saveState();
+  updateHomeStats();
+  renderFavorites();
+  showToast('💔 Retiré des favoris');
+}
+
+function renderHistory() {
+  const container = document.getElementById('histList');
+  container.innerHTML = '';
+
+  if (state.history.length === 0) {
+    container.innerHTML = `
+      <div class="fav-empty">
+        <div class="fav-empty-icon">📜</div>
+        <div class="fav-empty-text">AUCUN HISTORIQUE</div>
+      </div>
+    `;
+    return;
+  }
+
+  state.history.forEach(entry => {
+    const part = PARTS.find(p => p.id === entry.partId);
+    if (!part) return;
+    const date = new Date(entry.ts);
+    const dateStr = date.toLocaleDateString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.onclick = () => openPlayer(entry.partId, entry.epIdx);
+    item.innerHTML = `
+      <div class="history-badge" style="background:linear-gradient(135deg,${part.color},${part.color2});">${part.emoji}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-family:var(--font-hud);font-size:0.55rem;color:var(--c-pink);letter-spacing:2px;">PART ${part.id}</div>
+        <div style="font-size:0.85rem;font-weight:700;color:var(--c-white);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${part.epTitles[entry.epIdx]}</div>
+        <div style="font-size:0.6rem;color:rgba(240,230,255,0.4);margin-top:2px;">${dateStr}</div>
+      </div>
+      <div style="font-size:1rem;">›</div>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function clearHistory() {
+  if (confirm('Effacer tout l\'historique ?')) {
+    state.history = [];
+    saveState();
+    renderHistory();
+    showToast('🗑️ Historique effacé');
+  }
+}
+
+/* ============================================================
+   DRIVE CONFIG
+   ============================================================ */
+function buildDriveFields() {
+  const container = document.getElementById('driveFields');
+  container.innerHTML = '';
+  PARTS.forEach(part => {
+    const key = `part${part.id}`;
+    const val = state.driveConfig[key] || '';
+    container.innerHTML += `
+      <div class="field-label">PART ${part.id} — ${part.name.toUpperCase()}</div>
+      <input class="field-input" id="driveInput_${part.id}" type="text" placeholder="ID du dossier Google Drive..." value="${val}">
+    `;
+  });
+  document.getElementById('apiKeyInput').value = state.driveConfig.apiKey || '';
+}
+
+function saveDriveConfig() {
+  PARTS.forEach(part => {
+    const val = document.getElementById(`driveInput_${part.id}`).value.trim();
+    state.driveConfig[`part${part.id}`] = val;
+  });
+  state.driveConfig.apiKey = document.getElementById('apiKeyInput').value.trim();
+  saveState();
+  updateDriveStatus();
+  closeModal();
+  showToast('💾 Configuration sauvegardée !');
+}
+
+function updateDriveStatus() {
+  const badge = document.getElementById('driveStatusBadge');
+  const configured = PARTS.some(p => state.driveConfig[`part${p.id}`]);
+  if (configured) {
+    badge.className = 'drive-status connected';
+    badge.innerHTML = '<div class="drive-status-dot"></div><span>GOOGLE DRIVE CONNECTÉ</span>';
+  } else {
+    badge.className = 'drive-status disconnected';
+    badge.innerHTML = '<div class="drive-status-dot"></div><span>GOOGLE DRIVE NON CONFIGURÉ</span>';
+  }
+}
+
+function openModal() {
+  buildDriveFields();
+  document.getElementById('driveModal').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('driveModal').classList.remove('open');
+}
+document.getElementById('driveModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('driveModal')) closeModal();
+});
+
+/* ============================================================
+   SETTINGS ACTIONS
+   ============================================================ */
+function resetProgress() {
+  if (confirm('Réinitialiser toute la progression ? (favoris conservés)')) {
+    state.watched = {};
+    state.progress = {};
+    state.history = [];
+    state.lastEp = null;
+    saveState();
+    updateHomeStats();
+    updateContinueBtn();
+    showToast('🔄 Progression réinitialisée');
+  }
+}
+
+function exportData() {
+  const data = JSON.stringify(state, null, 2);
+  const blob = new Blob([data], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'jojo-viewer-backup.json';
+  a.click();
+  showToast('💾 Export téléchargé !');
+}
+
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const imported = JSON.parse(ev.target.result);
+        state = { ...state, ...imported };
+        saveState();
+        updateHomeStats();
+        updateContinueBtn();
+        updateDriveStatus();
+        showToast('📥 Données importées !');
+      } catch(err) {
+        showToast('❌ Fichier invalide');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+/* ============================================================
+   ORA ORA
+   ============================================================ */
+function showOra() {
+  const overlay = document.getElementById('oraOverlay');
+  overlay.classList.add('show');
+  setTimeout(() => overlay.classList.remove('show'), 700);
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+let toastTimeout;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+/* ============================================================
+   PWA SERVICE WORKER
+   ============================================================ */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
